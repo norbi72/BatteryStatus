@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">BatteryStatus</string>
+    <string name="mqtt_server_url">tcp://192.168.31.111:1883</string>
+    <string name="mqtt_client_id" translatable="false">norbi_android_batterystatus</string>
+<!--    <string name="mqtt_subscription_topic" translatable="false">cameratowled/cmd/+</string>-->
+    <string name="mqtt_message_topic" translatable="false">homeassistant/sensor/android_redmi_note_9_pro_battery/attributes</string>
+    <string name="mqtt_username" translatable="false">norbi</string>
+    <string name="mqtt_password" translatable="false">aA112233</string>
+    <string name="action_settings">Settings</string>
+    <string name="first_fragment_label">First fragment</string>
+    <string name="TempInfo">%s: %s at %d%%  %.1f°C</string>
+    <string name="StatusJsonTemplate">{\u0022state\u0022:%d,\u0022voltage\u0022:\u0022%.4f V\u0022,\u0022temperature\u0022:%s,\u0022charging_state\u0022:\u0022%s\u0022,\u0022power\u0022:\u0022USB\u0022,\u0022device_class\u0022:\u0022battery\u0022,\u0022unit_of_measurement\u0022:\u0022%%\u0022,\u0022health\u0022:\u0022good\u0022,\u0022technology\u0022:\u0022Li-poly\u0022,\u0022icon\u0022:\u0022%s\u0022}</string>
+</resources>
