@@ -12,12 +12,19 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.support.v7.app.AppCompatActivity;
 
+import android.support.v7.app.AppCompatDelegate;
+import android.view.View;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.util.Date;
+import java.util.Locale;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -29,6 +36,8 @@ import java.util.logging.Logger;
 public class MainActivity extends AppCompatActivity {
     private static final double THRESHOLD = 0.3;
     TextView textview;
+    ImageView connectionStatusImageView;
+    TextView lastMqttMessageTextView;
     IntentFilter intentfilter;
     int batteryStatus;
     String currentBatteryStatus="Battery Info";
@@ -44,8 +53,14 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Force the app to always use night mode
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
+
         setContentView(R.layout.activity_main);
-        textview = (TextView)findViewById(R.id.textViewBatteryStatus);
+        textview = findViewById(R.id.textViewBatteryStatus);
+        connectionStatusImageView = findViewById(R.id.connectionStatusImageView);
+        lastMqttMessageTextView = findViewById(R.id.lastMqttMessage);
         intentfilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
 
         Context context = this.getApplicationContext();
@@ -66,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
                 mBounded = true;
                 MqttService.LocalBinder mLocalBinder = (MqttService.LocalBinder) service;
                 myService = mLocalBinder.getService();
-
+                connectionStatusImageView.setImageResource(R.drawable.ic_baseline_wifi_24);
             }
 
             @Override
@@ -74,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(MainActivity.this, "Service is disconnected", Toast.LENGTH_SHORT).show();
                 mBounded = false;
                 myService = null;
+                connectionStatusImageView.setImageResource(R.drawable.ic_baseline_wifi_off_24);
             }
 
             @Override
@@ -81,6 +97,7 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(MainActivity.this, "Service binding died", Toast.LENGTH_SHORT).show();
                 mBounded = false;
                 myService = null;
+                connectionStatusImageView.setImageResource(R.drawable.ic_baseline_wifi_off_24);
             }
         };
         context.bindService(mymqttservice_intent, myServiceConnection, Context.BIND_AUTO_CREATE);
@@ -138,15 +155,22 @@ public class MainActivity extends AppCompatActivity {
 
             if (oldBatteryStatus != batteryStatus ||  oldBatteryLevel != batteryLevel || Math.abs(oldBatteryTemperature - temperature) > THRESHOLD) {
                 int batteryLevel10 = (batteryLevel/10) * 10;
-                String icon = "mdi:battery-"+getBatteryChargingState(batteryStatus).replace(" ", "-")+"-"+batteryLevel10;
+                final String icon = "mdi:battery-"+getBatteryChargingState(batteryStatus).replace(" ", "-")+"-"+batteryLevel10;
 
                 try {
-                    MqttMessage mqttMessage = new MqttMessage((getString(R.string.StatusJsonTemplate, batteryLevel, voltage, Float.toString(temperature).replace(",", "."), getBatteryChargingState(batteryStatus), icon)).getBytes(StandardCharsets.UTF_8));
+                    final String mqttMsgString = getString(R.string.StatusJsonTemplate, batteryLevel, voltage, Float.toString(temperature).replace(",", "."), getBatteryChargingState(batteryStatus), icon);
+                    MqttMessage mqttMessage = new MqttMessage(mqttMsgString.getBytes(StandardCharsets.UTF_8));
                     myService.publish("homeassistant/sensor/android_redmi_note_9_pro_battery/attributes", mqttMessage);
 
                     oldBatteryStatus = batteryStatus;
                     oldBatteryTemperature = temperature;
                     oldBatteryLevel = batteryLevel;
+
+                    Date now = new Date();
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                    String formattedDate = sdf.format(now);
+
+                    lastMqttMessageTextView.setText(String.format("Last MQTT message:\n%1$s\nat %2$s", mqttMsgString, formattedDate));
                 } catch (Exception e) {
                     logger.log(Level.SEVERE, e.getMessage());
                 }
