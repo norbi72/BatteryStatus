@@ -16,9 +16,13 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.preference.PreferenceManager;
 import android.support.v4.app.NotificationCompat;
+import android.text.Html;
 import android.util.Log;
+import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import org.eclipse.paho.client.mqttv3.IMqttAsyncClient;
@@ -31,6 +35,10 @@ import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.MqttSecurityException;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 
 public class MqttService extends Service {
@@ -68,6 +76,7 @@ public class MqttService extends Service {
     private ConnectivityManager mConnMan;
     private volatile IMqttAsyncClient mqttClient;
     private String uniqueID;
+    private String lastMqttMessage;
 
     MQTTBroadcastReceiver mqttBroadcastReceiver;
 
@@ -108,9 +117,23 @@ public class MqttService extends Service {
 
 
     public class LocalBinder extends Binder {
-        public MqttService getService() {
+        private ImageView connectionStatusImageView;
+        private TextView lastMqttMessageTextView;
+
+        public MqttService getService(ImageView connectionStatusImageView, TextView lastMqttMessageTextView) {
+            this.connectionStatusImageView = connectionStatusImageView;
+            this.lastMqttMessageTextView = lastMqttMessageTextView;
+
             // Return this instance of LocalService so clients can call public methods
             return MqttService.this;
+        }
+
+        public ImageView getConnectionStatusImageView() {
+            return connectionStatusImageView;
+        }
+
+        public TextView getLastMqttMessageTextView() {
+            return lastMqttMessageTextView;
         }
     }
 
@@ -128,6 +151,7 @@ public class MqttService extends Service {
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this);// we create a 'shared" memory where we will share our preferences for the limits and the values that we get from onsensorchanged
         try {
 
+            lastMqttMessage = message.toString();
             mqttClient.publish(topic, message);
 
         } catch (MqttException e) {
@@ -205,7 +229,12 @@ public class MqttService extends Service {
             mqttClient.setCallback(new MqttCallback() {
                 @Override
                 public void connectionLost(Throwable throwable) {
-                    Log.d(TAG, "Connection lost");
+                    Log.d(TAG, "Connection lost (in callback)");
+                    mHandler.post(new ToastRunnable("CONNECTION LOST!", 4000));
+                    ((LocalBinder) mBinder).getConnectionStatusImageView().post(() -> {
+                        ((LocalBinder) mBinder).getConnectionStatusImageView().setImageResource(R.drawable.ic_baseline_wifi_off_24);
+                    });
+
                     try {
                         mqttClient.disconnectForcibly();
                         mqttClient.connect();
@@ -231,11 +260,31 @@ public class MqttService extends Service {
                 @Override
                 public void deliveryComplete(IMqttDeliveryToken iMqttDeliveryToken) {
                     Log.d(TAG, "Message published");
+
+                    Date now = new Date();
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                    String formattedDate = sdf.format(now);
+
+                    ((LocalBinder) mBinder).getLastMqttMessageTextView().post(() -> {
+                        ((LocalBinder) mBinder).getLastMqttMessageTextView().setText(
+                                Html.fromHtml(String.format("Last MQTT message:<br><font color='#EEFF00'>%1$s</font><br>at <font color='#2FFF00'>%2$s</font>",
+                                        MqttService.this.lastMqttMessage, formattedDate),
+                                        Html.FROM_HTML_MODE_COMPACT)
+                        );
+                    });
                 }
             });
 
-//            mqttClient.subscribe("Sensors/" + uniqueID, 0);
-//            mqttClient.subscribe("Sensors/message", 0);
+            Log.i(TAG, "WE ARE ONLINE!");
+            mHandler.post(new ToastRunnable("WE ARE ONLINE!", 4000));
+
+            Handler handler = new Handler(Looper.getMainLooper());
+            handler.post(() -> {
+                // Code to update UI in the UI thread
+                ((LocalBinder) mBinder).getConnectionStatusImageView().post(() -> {
+                    ((LocalBinder) mBinder).getConnectionStatusImageView().setImageResource(R.drawable.ic_baseline_wifi_24);
+                });
+            });
 
         } catch (MqttSecurityException e) {
             e.printStackTrace();
@@ -244,17 +293,21 @@ public class MqttService extends Service {
                 case MqttException.REASON_CODE_BROKER_UNAVAILABLE:
                     Log.i(TAG, "WE ARE OFFLINE BROKER_UNAVAILABLE!");
                     mHandler.post(new ToastRunnable("WE ARE OFFLINE BROKER_UNAVAILABLE!", 4000));
+                    ((LocalBinder) mBinder).getConnectionStatusImageView().setImageResource(R.drawable.ic_baseline_wifi_off_24);
                     break;
                 case MqttException.REASON_CODE_CLIENT_TIMEOUT:
                     Log.i(TAG, "WE ARE OFFLINE CLIENT_TIMEOUT!");
                     mHandler.post(new ToastRunnable("WE ARE OFFLINE CLIENT_TIMEOUT!", 4000));
+                    ((LocalBinder) mBinder).getConnectionStatusImageView().setImageResource(R.drawable.ic_baseline_wifi_off_24);
                     break;
                 case MqttException.REASON_CODE_CONNECTION_LOST:
                     Log.i(TAG, "WE ARE OFFLINE CONNECTION_LOST!");
                     mHandler.post(new ToastRunnable("WE ARE OFFLINE CONNECTION_LOST!", 4000));
+                    ((LocalBinder) mBinder).getConnectionStatusImageView().setImageResource(R.drawable.ic_baseline_wifi_off_24);
                     break;
                 case MqttException.REASON_CODE_SERVER_CONNECT_ERROR:
                     Log.v(TAG, "connect error " + e.getMessage());
+                    ((LocalBinder) mBinder).getConnectionStatusImageView().setImageResource(R.drawable.ic_baseline_wifi_off_24);
                     e.printStackTrace();
                     break;
                 case MqttException.REASON_CODE_FAILED_AUTHENTICATION:
@@ -262,19 +315,19 @@ public class MqttService extends Service {
                     Intent i = new Intent("RAISEALLARM");
                     i.putExtra("ALLARM", e);
                     Log.e(TAG, "b" + e.getMessage());
+                    ((LocalBinder) mBinder).getConnectionStatusImageView().setImageResource(R.drawable.ic_baseline_wifi_off_24);
                     break;
                 default:
                     Log.e(TAG, "a" + e.getMessage());
             }
         }
-        Log.i(TAG, "WE ARE ONLINE!");
-        mHandler.post(new ToastRunnable("WE ARE ONLINE!", 4000));
-
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.v(TAG, "onStartCommand()");
-        return START_STICKY;
+        // If START_NOT_STICKY is returned, the service won't be restarted if the system kills it.
+        return START_NOT_STICKY;
+//        return START_STICKY;
     }
 }

@@ -3,4 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools"
     tools:context="hu.norbi.batterystatus.MainActivity">
 
+    <item
+        android:id="@+id/action_configuration"
+        android:title="Configuration"
+        android:orderInCategory="100"
+        app:showAsAction="never" />
+
 </menu>
