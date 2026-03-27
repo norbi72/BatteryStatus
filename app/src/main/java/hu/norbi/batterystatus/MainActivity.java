@@ -8,10 +8,15 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.support.v7.app.AppCompatActivity;
 
 import android.support.v7.app.AppCompatDelegate;
@@ -71,6 +76,33 @@ public class MainActivity extends AppCompatActivity {
         // Set up the toolbar
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
+
+        // Initialize TextView
+        TextView versionTextView = findViewById(R.id.versionTextView);
+
+        try {
+            // Get PackageInfo for the current app
+            PackageManager packageManager = getPackageManager();
+            PackageInfo packageInfo = packageManager.getPackageInfo(getPackageName(), 0);
+
+            // Extract version name and code
+            String versionName = packageInfo.versionName;
+            int versionCode = packageInfo.versionCode;
+
+            // Set version information to the TextView
+            versionTextView.setText(String.format("Version: %s (%d)", versionName, versionCode));
+        } catch (PackageManager.NameNotFoundException e) {
+            e.printStackTrace();
+            versionTextView.setText("Version info not available");
+        }
+
+        // Force the application to run in the background
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (!pm.isIgnoringBatteryOptimizations(getPackageName())) {
+            Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        }
 
         batteryStatusTextView = findViewById(R.id.textViewBatteryStatus);
         connectionStatusImageView = findViewById(R.id.connectionStatusImageView);

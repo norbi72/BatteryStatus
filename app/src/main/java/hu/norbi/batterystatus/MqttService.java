@@ -213,7 +213,7 @@ public class MqttService extends Service {
 
     private void doConnect() {
         String broker = "tcp://" + ip + ":" + port;
-        Log.d(TAG, "mqtt_doConnect()");
+        Log.d(TAG, "mqtt_doConnect("+broker+")");
         IMqttToken token;
         MqttConnectOptions options = new MqttConnectOptions();
         options.setCleanSession(true);
