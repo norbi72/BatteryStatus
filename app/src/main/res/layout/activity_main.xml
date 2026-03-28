@@ -40,14 +40,33 @@
             android:layout_height="10dp"
             android:layout_weight="1" />
 
-        <TextView
-            android:id="@+id/textViewBatteryStatus"
+        <RelativeLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Battery info:"
-            android:textAlignment="center"
-            android:textSize="20sp" />
+            android:layout_height="2dp"
+            android:layout_weight="1">
+
+            <TextView
+                android:id="@+id/textViewBatteryStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:layout_toStartOf="@+id/sendNowButton"
+                android:text="Battery info:"
+                android:textSize="20sp" />
+
+            <ImageButton
+                android:id="@+id/sendNowButton"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Send now"
+                android:scaleType="centerInside"
+                android:src="@android:drawable/ic_menu_upload"
+                android:tint="@android:color/white" />
+        </RelativeLayout>
 
         <ImageView
             android:id="@+id/connectionStatusImageView"

@@ -27,6 +27,7 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -72,6 +73,9 @@ public class MainActivity extends AppCompatActivity {
 
         Button stopButton = findViewById(R.id.stopButton);
         stopButton.setOnClickListener(v -> forceStopAndQuit());
+
+        ImageButton sendNowButton = findViewById(R.id.sendNowButton);
+        sendNowButton.setOnClickListener(v -> sendCurrentBatteryStatus());
 
         // Set up the toolbar
         Toolbar toolbar = findViewById(R.id.toolbar);
@@ -153,6 +157,16 @@ public class MainActivity extends AppCompatActivity {
         context.bindService(mymqttservice_intent, myServiceConnection, Context.BIND_AUTO_CREATE);
 
         MainActivity.this.registerReceiver(broadcastreceiver,intentfilter);
+    }
+
+    private void sendCurrentBatteryStatus() {
+        Intent batteryStatusIntent = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (batteryStatusIntent != null) {
+            // Force a send by resetting old values
+            oldBatteryLevel = -1;
+            broadcastreceiver.onReceive(this, batteryStatusIntent);
+            Toast.makeText(this, "Sending battery status...", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void forceStopAndQuit() {
