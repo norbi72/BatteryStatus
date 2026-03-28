@@ -282,6 +282,7 @@ public class MqttService extends Service {
             handler.post(() -> {
                 // Code to update UI in the UI thread
                 ((LocalBinder) mBinder).getConnectionStatusImageView().post(() -> {
+                    Log.i(TAG, "UI THREAD -> ONLINE");
                     ((LocalBinder) mBinder).getConnectionStatusImageView().setImageResource(R.drawable.ic_baseline_wifi_24);
                 });
             });
