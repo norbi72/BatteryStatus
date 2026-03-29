@@ -91,12 +91,14 @@ public class MqttService extends Service {
         @Override
         public void onAvailable(@NonNull Network network) {
             super.onAvailable(network);
+            Log.d(TAG, "Network available");
             checkConnectivity();
         }
 
         @Override
         public void onLost(@NonNull Network network) {
             super.onLost(network);
+            Log.d(TAG, "Network lost");
             checkConnectivity();
         }
 
@@ -129,7 +131,7 @@ public class MqttService extends Service {
         boolean hasConnectivity = hasMobile || hasWifi;
         Log.v(TAG, "hasConn: " + hasConnectivity + " hasChange: " + hasChanged + " - " + (mqttClient == null || !mqttClient.isConnected()));
         
-        if (hasConnectivity && hasChanged && (mqttClient == null || !mqttClient.isConnected())) {
+        if (hasConnectivity && (mqttClient == null || !mqttClient.isConnected())) {
             doConnect();
         }
     }
@@ -170,6 +172,9 @@ public class MqttService extends Service {
             IMqttAsyncClient client = mqttClient;
             if (client != null && client.isConnected()) {
                 client.publish(topic, message);
+            } else {
+                Log.w(TAG, "Client not connected, attempting to reconnect...");
+                doConnect();
             }
         } catch (MqttException e) {
             Log.e(TAG, "Error publishing message", e);
@@ -230,6 +235,11 @@ public class MqttService extends Service {
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
         }
+        if (mqttClient != null) {
+            try {
+                mqttClient.disconnect();
+            } catch (MqttException ignored) {}
+        }
         super.onDestroy();
     }
 
@@ -242,38 +252,34 @@ public class MqttService extends Service {
     }
 
 
-    private void doConnect() {
+    private synchronized void doConnect() {
+        if (mqttClient != null && mqttClient.isConnected()) {
+            return;
+        }
+
         String broker = "tcp://" + IP + ":" + PORT;
         Log.d(TAG, "mqtt_doConnect(" + broker + ")");
         MqttConnectOptions options = new MqttConnectOptions();
         options.setCleanSession(true);
         options.setMaxInflight(100);
         options.setAutomaticReconnect(true);
-        options.setConnectionTimeout(1000);
+        options.setConnectionTimeout(30);
+        options.setKeepAliveInterval(60);
+
         try {
-            mqttClient = new MqttAsyncClient(broker, uniqueID, new MemoryPersistence());
-            IMqttToken token = mqttClient.connect(options);
-            token.waitForCompletion(3500);
+            if (mqttClient == null) {
+                mqttClient = new MqttAsyncClient(broker, uniqueID, new MemoryPersistence());
+            }
 
             mqttClient.setCallback(new MqttCallback() {
                 @Override
                 public void connectionLost(Throwable throwable) {
                     Log.d(TAG, "Connection lost (in callback)");
                     mHandler.post(new ToastRunnable("CONNECTION LOST!", 4000));
-                    ImageView iv = ((LocalBinder) mBinder).getConnectionStatusImageView();
-                    if (iv != null) {
-                        iv.post(() -> iv.setImageResource(R.drawable.ic_baseline_wifi_off_24));
-                    }
-
-                    try {
-                        IMqttAsyncClient client = mqttClient;
-                        if (client != null) {
-                            client.disconnectForcibly();
-                            client.connect();
-                        }
-                    } catch (MqttException e) {
-                        Log.e(TAG, "Error reconnecting", e);
-                    }
+                    updateUIOffline();
+                    
+                    // The automaticReconnect option should handle this, but we can also trigger a check
+                    mHandler.postDelayed(() -> checkConnectivity(), 5000);
                 }
 
                 @Override
@@ -300,52 +306,49 @@ public class MqttService extends Service {
                 }
             });
 
-            Log.i(TAG, "WE ARE ONLINE!");
-            mHandler.post(new ToastRunnable("WE ARE ONLINE!", 4000));
-
-            new Handler(Looper.getMainLooper()).post(() -> {
-                ImageView iv = ((LocalBinder) mBinder).getConnectionStatusImageView();
-                if (iv != null) {
-                    iv.post(() -> {
-                        Log.i(TAG, "UI THREAD -> ONLINE");
-                        iv.setImageResource(R.drawable.ic_baseline_wifi_24);
-                    });
+            mqttClient.connect(options, null, null);
+            
+            // Wait a bit to check if connected, or handle via callback
+            mHandler.postDelayed(() -> {
+                if (mqttClient != null && mqttClient.isConnected()) {
+                    onConnectedSuccess();
                 }
-                if (onConnectedListener != null) {
-                    onConnectedListener.onConnected();
-                }
-            });
+            }, 1000);
 
-        } catch (MqttSecurityException e) {
-            Log.e(TAG, "Security exception", e);
         } catch (MqttException e) {
-            ImageView iv = ((LocalBinder) mBinder).getConnectionStatusImageView();
-            switch (e.getReasonCode()) {
-                case MqttException.REASON_CODE_BROKER_UNAVAILABLE:
-                case MqttException.REASON_CODE_CLIENT_TIMEOUT:
-                case MqttException.REASON_CODE_CONNECTION_LOST:
-                    String msg = "WE ARE OFFLINE: " + e.getReasonCode();
-                    Log.i(TAG, msg);
-                    mHandler.post(new ToastRunnable(msg, 4000));
-                    if (iv != null) iv.setImageResource(R.drawable.ic_baseline_wifi_off_24);
-                    break;
-                case MqttException.REASON_CODE_SERVER_CONNECT_ERROR:
-                    Log.e(TAG, "Server connect error", e);
-                    if (iv != null) iv.setImageResource(R.drawable.ic_baseline_wifi_off_24);
-                    break;
-                case MqttException.REASON_CODE_FAILED_AUTHENTICATION:
-                    Log.e(TAG, "FAILED AUTH");
-                    if (iv != null) iv.setImageResource(R.drawable.ic_baseline_wifi_off_24);
-                    break;
-                default:
-                    Log.e(TAG, "MqttException: " + e.getMessage(), e);
-            }
+            Log.e(TAG, "MqttException: " + e.getMessage(), e);
+            updateUIOffline();
         }
+    }
+
+    private void onConnectedSuccess() {
+        Log.i(TAG, "WE ARE ONLINE!");
+        mHandler.post(new ToastRunnable("WE ARE ONLINE!", 4000));
+
+        new Handler(Looper.getMainLooper()).post(() -> {
+            ImageView iv = ((LocalBinder) mBinder).getConnectionStatusImageView();
+            if (iv != null) {
+                iv.setImageResource(R.drawable.ic_baseline_wifi_24);
+            }
+            if (onConnectedListener != null) {
+                onConnectedListener.onConnected();
+            }
+        });
+    }
+
+    private void updateUIOffline() {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            ImageView iv = ((LocalBinder) mBinder).getConnectionStatusImageView();
+            if (iv != null) {
+                iv.setImageResource(R.drawable.ic_baseline_wifi_off_24);
+            }
+        });
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.v(TAG, "onStartCommand()");
+        checkConnectivity();
         return START_STICKY;
     }
 }
