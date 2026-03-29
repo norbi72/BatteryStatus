@@ -178,7 +178,12 @@ public class MainActivity extends AppCompatActivity {
             // Force a send by resetting old values
             oldBatteryLevel = -1;
             broadcastreceiver.onReceive(this, batteryStatusIntent);
-            Toast.makeText(this, "Sending battery status...", Toast.LENGTH_SHORT).show();
+            
+            if (mqttService != null && mqttService.isConnected()) {
+                Toast.makeText(this, "Sending battery status 🪁", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "MQTT connection lost, cannot send battery status 😕", Toast.LENGTH_LONG).show();
+            }
         }
     }
 
