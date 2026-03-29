@@ -16,6 +16,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.support.annotation.NonNull;
 import android.support.v4.app.NotificationCompat;
 import android.text.Html;
@@ -45,6 +46,7 @@ public class MqttService extends Service {
     private static final String PORT = "1883";
     private final IBinder mBinder = new LocalBinder();
     private Handler mHandler;
+    private PowerManager.WakeLock wakeLock;
 
     private class ToastRunnable implements Runnable {
         String mText;
@@ -161,8 +163,10 @@ public class MqttService extends Service {
     }
 
 
+    @SuppressLint("WakelockTimeout")
     @Override
     public void onCreate() {
+        super.onCreate();
         mHandler = new Handler(Looper.getMainLooper());
         setClientID();
         mConnMan = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
@@ -170,23 +174,31 @@ public class MqttService extends Service {
             mConnMan.registerDefaultNetworkCallback(networkCallback);
         }
 
+        // Keep CPU running even if screen is off
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BatteryStatus::MqttWakeLock");
+        wakeLock.acquire();
+
+        String CHANNEL_ID = "my_channel_01";
         if (Build.VERSION.SDK_INT >= 26) {
-            String CHANNEL_ID = "my_channel_01";
             NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
-                    "Channel human readable title",
-                    NotificationManager.IMPORTANCE_DEFAULT);
+                    "Battery Status Service",
+                    NotificationManager.IMPORTANCE_LOW);
 
             NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (notificationManager != null) {
                 notificationManager.createNotificationChannel(channel);
             }
-
-            Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setContentTitle("")
-                    .setContentText("").build();
-
-            startForeground(1, notification);
         }
+
+        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("Battery Status")
+                .setContentText("Running in background to monitor battery")
+                .setSmallIcon(R.drawable.ic_launcher)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build();
+
+        startForeground(1, notification);
     }
 
     @Override
@@ -197,11 +209,14 @@ public class MqttService extends Service {
 
     @Override
     public void onDestroy() {
-        super.onDestroy();
         Log.d("Service", "onDestroy");
         if (mConnMan != null) {
             mConnMan.unregisterNetworkCallback(networkCallback);
         }
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+        }
+        super.onDestroy();
     }
 
 
@@ -314,6 +329,6 @@ public class MqttService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.v(TAG, "onStartCommand()");
-        return START_NOT_STICKY;
+        return START_STICKY;
     }
 }
