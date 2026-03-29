@@ -62,6 +62,7 @@ public class MainActivity extends AppCompatActivity {
     int oldBatteryLevel = 0;
     int oldBatteryStatus = 0;
     float oldBatteryTemperature = 0F;
+    private boolean initialStatusSent = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -131,6 +132,18 @@ public class MainActivity extends AppCompatActivity {
                 MqttService.LocalBinder mLocalBinder = (MqttService.LocalBinder) service;
                 mqttService = mLocalBinder.getService(connectionStatusImageView, lastMqttMessageTextView);
                 mBounded = true;
+
+                mqttService.setOnConnectedListener(() -> {
+                    if (!initialStatusSent) {
+                        sendCurrentBatteryStatus();
+                        initialStatusSent = true;
+                    }
+                });
+
+                if (mqttService.isConnected() && !initialStatusSent) {
+                    sendCurrentBatteryStatus();
+                    initialStatusSent = true;
+                }
             }
 
             @Override

@@ -48,6 +48,20 @@ public class MqttService extends Service {
     private Handler mHandler;
     private PowerManager.WakeLock wakeLock;
 
+    public interface OnConnectedListener {
+        void onConnected();
+    }
+
+    private OnConnectedListener onConnectedListener;
+
+    public void setOnConnectedListener(OnConnectedListener listener) {
+        this.onConnectedListener = listener;
+    }
+
+    public boolean isConnected() {
+        return mqttClient != null && mqttClient.isConnected();
+    }
+
     private class ToastRunnable implements Runnable {
         String mText;
         int mtime;
@@ -296,6 +310,9 @@ public class MqttService extends Service {
                         Log.i(TAG, "UI THREAD -> ONLINE");
                         iv.setImageResource(R.drawable.ic_baseline_wifi_24);
                     });
+                }
+                if (onConnectedListener != null) {
+                    onConnectedListener.onConnected();
                 }
             });
 
