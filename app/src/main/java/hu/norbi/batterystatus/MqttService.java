@@ -7,6 +7,7 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -285,6 +286,15 @@ public class MqttService extends Service {
                 @Override
                 public void messageArrived(String topic, MqttMessage msg) {
                     Log.i(TAG, "Message arrived from topic " + topic);
+                    String payload = new String(msg.getPayload());
+                    if ("off".equalsIgnoreCase(payload)) {
+                        mHandler.post(() -> {
+                            Intent intent = new Intent(MqttService.this, MainActivity.class);
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                            intent.putExtra("ACTION_EXIT", true);
+                            startActivity(intent);
+                        });
+                    }
                 }
 
                 @Override
@@ -334,6 +344,29 @@ public class MqttService extends Service {
                 onConnectedListener.onConnected();
             }
         });
+
+        subscribeToExitTopic();
+    }
+
+    private void subscribeToExitTopic() {
+        SharedPreferences sharedPref = getSharedPreferences("AppPreferences", MODE_PRIVATE);
+        boolean mqttExitEnabled = sharedPref.getBoolean("mqtt_exit_enabled", false);
+        String exitTopic = sharedPref.getString("exit_mqtt_topic", "");
+
+        if (mqttExitEnabled && !exitTopic.isEmpty() && mqttClient != null && mqttClient.isConnected()) {
+            try {
+                mqttClient.subscribe(exitTopic, 0);
+                Log.d(TAG, "Subscribed to exit topic: " + exitTopic);
+            } catch (MqttException e) {
+                Log.e(TAG, "Error subscribing to exit topic", e);
+            }
+        }
+    }
+
+    public void refreshSubscriptions() {
+        if (mqttClient != null && mqttClient.isConnected()) {
+            subscribeToExitTopic();
+        }
     }
 
     private void updateUIOffline() {

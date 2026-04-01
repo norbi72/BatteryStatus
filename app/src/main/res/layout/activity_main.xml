@@ -58,25 +58,11 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="24dp"
-        android:layout_marginBottom="16dp"
+        android:layout_marginBottom="80dp"
         android:gravity="center"
         android:minLines="5"
         android:text="Last message:"
         android:textSize="14sp"
-        app:layout_constraintBottom_toTopOf="@id/stopButton"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
-    <!-- Power off button at the bottom, with space for Toast below -->
-    <Button
-        android:id="@+id/stopButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="80dp"
-        android:drawableLeft="@android:drawable/ic_lock_power_off"
-        android:gravity="center"
-        android:padding="12dp"
-        android:text="Power off"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

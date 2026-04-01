@@ -31,6 +31,7 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.ToggleButton;
 
 
 import org.eclipse.paho.client.mqttv3.MqttMessage;
@@ -67,13 +68,16 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        if (getIntent().getBooleanExtra("ACTION_EXIT", false)) {
+            forceStopAndQuit();
+            return;
+        }
+
         setContentView(R.layout.activity_main);
 
         // Force the app to always use night mode
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
-
-        Button stopButton = findViewById(R.id.stopButton);
-        stopButton.setOnClickListener(v -> forceStopAndQuit());
 
         ImageButton sendNowButton = findViewById(R.id.sendNowButton);
         sendNowButton.setOnClickListener(v -> sendCurrentBatteryStatus());
@@ -172,6 +176,14 @@ public class MainActivity extends AppCompatActivity {
         MainActivity.this.registerReceiver(broadcastreceiver,intentfilter);
     }
 
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (intent.getBooleanExtra("ACTION_EXIT", false)) {
+            forceStopAndQuit();
+        }
+    }
+
     private void sendCurrentBatteryStatus() {
         Intent batteryStatusIntent = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         if (batteryStatusIntent != null) {
@@ -180,14 +192,14 @@ public class MainActivity extends AppCompatActivity {
             broadcastreceiver.onReceive(this, batteryStatusIntent);
             
             if (mqttService != null && mqttService.isConnected()) {
-                Toast.makeText(this, "Sending battery status 🪁", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Sending battery status \uD83E\uDE81", Toast.LENGTH_SHORT).show();
             } else {
-                Toast.makeText(this, "MQTT connection lost, cannot send battery status 😕", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "MQTT connection lost, cannot send battery status \uD83D\uDE15", Toast.LENGTH_LONG).show();
             }
         }
     }
 
-    private void forceStopAndQuit() {
+    public void forceStopAndQuit() {
         try {
             MainActivity.this.unregisterReceiver(broadcastreceiver);
             broadcastreceiver = null;
@@ -240,6 +252,9 @@ public class MainActivity extends AppCompatActivity {
         if (item.getItemId() == R.id.action_configuration) {
             showConfigurationDialog();  // Show the dialog when "Configuration" is clicked
             return true;
+        } else if (item.getItemId() == R.id.action_quit) {
+            forceStopAndQuit();
+            return true;
         }
         return super.onOptionsItemSelected(item);
     }
@@ -252,16 +267,37 @@ public class MainActivity extends AppCompatActivity {
 
         AlertDialog dialog = builder.create();
 
-        EditText input = dialogView.findViewById(R.id.phone_id_input);
+        EditText inputPhoneId = dialogView.findViewById(R.id.phone_id_input);
+        ToggleButton toggleMqttExit = dialogView.findViewById(R.id.toggleButton);
+        EditText inputExitTopic = dialogView.findViewById(R.id.phone_id_input2);
         Button submitButton = dialogView.findViewById(R.id.submit_button);
 
-        // Pre-fill the EditText with the stored configuration
-        input.setText(getStoredConfiguration());
+        SharedPreferences sharedPref = getSharedPreferences("AppPreferences", MODE_PRIVATE);
+        inputPhoneId.setText(sharedPref.getString("phone_id", "android_redmi_note_9_pro_battery"));
+        toggleMqttExit.setChecked(sharedPref.getBoolean("mqtt_exit_enabled", false));
+        inputExitTopic.setText(sharedPref.getString("exit_mqtt_topic", "/switch/norbi-phone-app"));
 
         submitButton.setOnClickListener(v -> {
-            String phoneId = input.getText().toString();
-            //Toast.makeText(MainActivity.this, "Submitted: " + configValue, Toast.LENGTH_SHORT).show();
-            storeConfiguration(phoneId);
+            String phoneId = inputPhoneId.getText().toString();
+            boolean mqttExitEnabled = toggleMqttExit.isChecked();
+            String exitTopic = inputExitTopic.getText().toString();
+
+            if (mqttExitEnabled && exitTopic.isEmpty()) {
+                inputExitTopic.setError("MQTT topic is mandatory when PowerOff is enabled!");
+                return;
+            }
+
+            SharedPreferences.Editor editor = sharedPref.edit();
+            editor.putString("phone_id", phoneId);
+            editor.putBoolean("mqtt_exit_enabled", mqttExitEnabled);
+            editor.putString("exit_mqtt_topic", exitTopic);
+            editor.apply();
+
+            Toast.makeText(MainActivity.this, "Configuration saved!", Toast.LENGTH_SHORT).show();
+            
+            if (mqttService != null) {
+                mqttService.refreshSubscriptions();
+            }
 
             dialog.dismiss();
         });
