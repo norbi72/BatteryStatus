@@ -26,6 +26,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.eclipse.paho.client.mqttv3.IMqttActionListener;
 import org.eclipse.paho.client.mqttv3.IMqttAsyncClient;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.IMqttToken;
@@ -34,8 +35,9 @@ import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
-import org.eclipse.paho.client.mqttv3.MqttSecurityException;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -48,6 +50,7 @@ public class MqttService extends Service {
     private final IBinder mBinder = new LocalBinder();
     private Handler mHandler;
     private PowerManager.WakeLock wakeLock;
+    private boolean initialStatusSent = false;
 
     public interface OnConnectedListener {
         void onConnected();
@@ -87,6 +90,7 @@ public class MqttService extends Service {
     private volatile IMqttAsyncClient mqttClient;
     private String uniqueID;
     private String lastMqttMessage;
+    private String lastMqttTimestamp;
 
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
         @Override
@@ -145,6 +149,11 @@ public class MqttService extends Service {
         public MqttService getService(ImageView connectionStatusImageView, TextView lastMqttMessageTextView) {
             this.connectionStatusImageView = connectionStatusImageView;
             this.lastMqttMessageTextView = lastMqttMessageTextView;
+
+            // Sync UI state immediately when binding (e.g. after screen rotation)
+            updateConnectionUI();
+            updateLastMessageUI(lastMqttMessageTextView);
+
             return MqttService.this;
         }
 
@@ -277,7 +286,7 @@ public class MqttService extends Service {
                 public void connectionLost(Throwable throwable) {
                     Log.d(TAG, "Connection lost (in callback)");
                     mHandler.post(new ToastRunnable("CONNECTION LOST!", 4000));
-                    updateUIOffline();
+                    updateConnectionUI();
                     
                     // The automaticReconnect option should handle this, but we can also trigger a check
                     mHandler.postDelayed(() -> checkConnectivity(), 5000);
@@ -303,31 +312,28 @@ public class MqttService extends Service {
 
                     Date now = new Date();
                     SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-                    String formattedDate = sdf.format(now);
+                    lastMqttTimestamp = sdf.format(now);
 
-                    TextView tv = ((LocalBinder) mBinder).getLastMqttMessageTextView();
-                    if (tv != null) {
-                        tv.post(() -> tv.setText(
-                                Html.fromHtml(String.format("Last MQTT message:<br><font color='#EEFF00'>%1$s</font><br>at <font color='#2FFF00'>%2$s</font>",
-                                        MqttService.this.lastMqttMessage, formattedDate),
-                                        Html.FROM_HTML_MODE_COMPACT)
-                        ));
-                    }
+                    updateLastMessageUI(((LocalBinder) mBinder).getLastMqttMessageTextView());
                 }
             });
 
-            mqttClient.connect(options, null, null);
-            
-            // Wait a bit to check if connected, or handle via callback
-            mHandler.postDelayed(() -> {
-                if (mqttClient != null && mqttClient.isConnected()) {
+            mqttClient.connect(options, null, new IMqttActionListener() {
+                @Override
+                public void onSuccess(IMqttToken asyncActionToken) {
                     onConnectedSuccess();
                 }
-            }, 1000);
+
+                @Override
+                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
+                    Log.e(TAG, "Connect failed", exception);
+                    updateConnectionUI();
+                }
+            });
 
         } catch (MqttException e) {
             Log.e(TAG, "MqttException: " + e.getMessage(), e);
-            updateUIOffline();
+            updateConnectionUI();
         }
     }
 
@@ -335,11 +341,9 @@ public class MqttService extends Service {
         Log.i(TAG, "WE ARE ONLINE!");
         mHandler.post(new ToastRunnable("WE ARE ONLINE!", 4000));
 
-        new Handler(Looper.getMainLooper()).post(() -> {
-            ImageView iv = ((LocalBinder) mBinder).getConnectionStatusImageView();
-            if (iv != null) {
-                iv.setImageResource(R.drawable.ic_baseline_wifi_24);
-            }
+        updateConnectionUI();
+        
+        mHandler.post(() -> {
             if (onConnectedListener != null) {
                 onConnectedListener.onConnected();
             }
@@ -369,13 +373,41 @@ public class MqttService extends Service {
         }
     }
 
-    private void updateUIOffline() {
-        new Handler(Looper.getMainLooper()).post(() -> {
-            ImageView iv = ((LocalBinder) mBinder).getConnectionStatusImageView();
-            if (iv != null) {
+    private void updateLastMessageUI(TextView tv) {
+        if (tv != null && lastMqttMessage != null && lastMqttTimestamp != null) {
+            String displayedMessage = lastMqttMessage;
+            try {
+                JSONObject jsonObject = new JSONObject(lastMqttMessage);
+                displayedMessage = jsonObject.toString(2);
+            } catch (JSONException ignored) {
+            }
+
+            final String finalMessage = displayedMessage.replace("\n", "<br>").replace(" ", "&nbsp;");
+            tv.post(() -> tv.setText(
+                    Html.fromHtml(String.format("Last MQTT message:<br><font color='#EEFF00'><small>%1$s</small></font><br>at <font color='#2FFF00'>%2$s</font>",
+                            finalMessage, lastMqttTimestamp),
+                            Html.FROM_HTML_MODE_COMPACT)
+            ));
+        }
+    }
+
+    public void updateConnectionUI() {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            performUpdateConnectionUI();
+        } else {
+            mHandler.post(this::performUpdateConnectionUI);
+        }
+    }
+
+    private void performUpdateConnectionUI() {
+        ImageView iv = ((LocalBinder) mBinder).getConnectionStatusImageView();
+        if (iv != null) {
+            if (isConnected()) {
+                iv.setImageResource(R.drawable.ic_baseline_wifi_24);
+            } else {
                 iv.setImageResource(R.drawable.ic_baseline_wifi_off_24);
             }
-        });
+        }
     }
 
     @Override

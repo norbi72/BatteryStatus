@@ -6,23 +6,21 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Toolbar at the top of the app -->
+    <!-- Standard Toolbar -->
     <android.support.v7.widget.Toolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
         android:background="?attr/colorPrimary"
         android:elevation="4dp"
-        app:popupTheme="@style/ThemeOverlay.AppCompat.Dark"
-        android:title="Battery Status"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"/>
+        app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Battery Status and Send Button at the top -->
+    <!-- Battery Status and Send Button under the toolbar -->
     <RelativeLayout
         android:id="@+id/batteryHeader"
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:padding="16dp"
         app:layout_constraintTop_toBottomOf="@id/toolbar"
@@ -35,9 +33,8 @@
             android:layout_height="wrap_content"
             android:layout_alignParentStart="true"
             android:layout_centerVertical="true"
-            android:layout_toStartOf="@+id/sendNowButton"
             android:text="Battery info:"
-            android:textSize="20sp" />
+            android:textSize="18sp" />
 
         <ImageButton
             android:id="@+id/sendNowButton"
@@ -52,43 +49,49 @@
             android:tint="@color/teal_200" />
     </RelativeLayout>
 
-    <!-- Last MQTT message section (usually 5 lines) -->
+    <!-- Split Guideline -->
+    <android.support.constraint.Guideline
+        android:id="@+id/guideline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.6" />
 
-    <!-- Connection icon centered in the remaining middle space -->
+    <!-- Left side bottom: JSON Status -->
     <TextView
         android:id="@+id/lastMqttMessage"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginHorizontal="24dp"
-        android:layout_marginBottom="20dp"
-        android:gravity="start"
-        android:minLines="5"
+        android:layout_height="0dp"
+        android:layout_margin="16dp"
+        android:gravity="bottom|start"
         android:text="Last message:"
-        android:textSize="16sp"
+        android:textSize="14sp"
         android:typeface="monospace"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintEnd_toStartOf="@id/guideline"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/batteryHeader" />
 
+    <!-- Right side: Connection icon centered in the remaining space -->
     <ImageView
         android:id="@+id/connectionStatusImageView"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:scaleType="center"
-        android:scaleX="5"
-        android:scaleY="5"
-        app:srcCompat="@drawable/ic_baseline_wifi_off_24"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:scaleType="centerInside"
+        android:scaleX="4"
+        android:scaleY="4"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/guideline"
         app:layout_constraintTop_toBottomOf="@id/batteryHeader"
-        app:layout_constraintBottom_toTopOf="@id/lastMqttMessage"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:srcCompat="@drawable/ic_baseline_wifi_off_24" />
 
+    <!-- Version at the bottom right corner -->
     <TextView
         android:id="@+id/versionTextView"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="8dp"
-        android:textAlignment="viewEnd"
         android:textSize="10sp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
