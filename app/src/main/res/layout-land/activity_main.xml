@@ -27,11 +27,21 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
+        <ImageView
+            android:id="@+id/connectionStatusImageView"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:layout_marginEnd="8dp"
+            app:srcCompat="@drawable/ic_baseline_wifi_off_24" />
+
         <TextView
             android:id="@+id/textViewBatteryStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_alignParentStart="true"
+            android:layout_toEndOf="@id/connectionStatusImageView"
+            android:layout_toStartOf="@+id/sendNowButton"
             android:layout_centerVertical="true"
             android:text="Battery info:"
             android:textSize="18sp" />
@@ -72,19 +82,17 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/batteryHeader" />
 
-    <!-- Right side: Connection icon centered in the remaining space -->
+    <!-- Right side: Battery state icon centered in the remaining space -->
     <ImageView
-        android:id="@+id/connectionStatusImageView"
+        android:id="@+id/batteryIconImageView"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:scaleType="centerInside"
-        android:scaleX="4"
-        android:scaleY="4"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/guideline"
         app:layout_constraintTop_toBottomOf="@id/batteryHeader"
-        app:srcCompat="@drawable/ic_baseline_wifi_off_24" />
+        tools:srcCompat="@android:drawable/ic_lock_idle_low_battery" />
 
     <!-- Version at the bottom right corner -->
     <TextView

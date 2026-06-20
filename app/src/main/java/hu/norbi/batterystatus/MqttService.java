@@ -5,13 +5,16 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
-import android.content.res.Configuration;
+import android.content.pm.ServiceInfo;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.os.BatteryManager;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Handler;
@@ -24,7 +27,6 @@ import android.text.Html;
 import android.util.Log;
 import android.widget.ImageView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import org.eclipse.paho.client.mqttv3.IMqttActionListener;
 import org.eclipse.paho.client.mqttv3.IMqttAsyncClient;
@@ -36,111 +38,118 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
-import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-
 public class MqttService extends Service {
+    private static final String TAG = "MqttService";
     private static final String IP = "192.168.31.111";
     private static final String PORT = "1883";
+    private static final double TEMP_THRESHOLD = 0.5;
+
     private final IBinder mBinder = new LocalBinder();
     private Handler mHandler;
     private PowerManager.WakeLock wakeLock;
-    private boolean initialStatusSent = false;
+    private ConnectivityManager mConnMan;
+    private volatile IMqttAsyncClient mqttClient;
+    
+    private String uniqueID;
+    private String lastMqttMessage;
+    private String lastMqttTimestamp;
+    private boolean hasWifi = false;
+    private boolean hasMobile = false;
 
-    public interface OnConnectedListener {
-        void onConnected();
+    private int oldBatteryLevel = -1;
+    private int oldBatteryStatus = -1;
+    private float oldBatteryTemperature = -1.0f;
+
+    public interface OnBatteryChangedListener {
+        void onBatteryChanged(int level, int status, float temperature, float voltage, String iconName);
     }
 
-    private OnConnectedListener onConnectedListener;
+    private OnBatteryChangedListener batteryListener;
 
-    public void setOnConnectedListener(OnConnectedListener listener) {
-        this.onConnectedListener = listener;
+    public void setOnBatteryChangedListener(OnBatteryChangedListener listener) {
+        this.batteryListener = listener;
+        forceRefresh();
+    }
+
+    public void forceRefresh() {
+        Intent intent = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (intent != null) {
+            oldBatteryLevel = -1; 
+            processBatteryIntent(intent);
+        }
     }
 
     public boolean isConnected() {
         return mqttClient != null && mqttClient.isConnected();
     }
 
-    private class ToastRunnable implements Runnable {
-        String mText;
-        int mtime;
-
-        public ToastRunnable(String text, int time) {
-            mText = text;
-            mtime = time;
-        }
-
-        @Override
-        public void run() {
-            final Toast mytoast = Toast.makeText(getApplicationContext(), mText, Toast.LENGTH_SHORT);
-            mytoast.show();
-            new Handler(Looper.getMainLooper()).postDelayed(mytoast::cancel, mtime);
-        }
+    public String getLastMqttMessage() {
+        return lastMqttMessage;
     }
 
-    private static final String TAG = "mqttservice";
-    private static boolean hasWifi = false;
-    private static boolean hasMobile = false;
-    private ConnectivityManager mConnMan;
-    private volatile IMqttAsyncClient mqttClient;
-    private String uniqueID;
-    private String lastMqttMessage;
-    private String lastMqttTimestamp;
-
-    private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
+    private final BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
         @Override
-        public void onAvailable(@NonNull Network network) {
-            super.onAvailable(network);
-            Log.d(TAG, "Network available");
-            checkConnectivity();
-        }
-
-        @Override
-        public void onLost(@NonNull Network network) {
-            super.onLost(network);
-            Log.d(TAG, "Network lost");
-            checkConnectivity();
-        }
-
-        @Override
-        public void onCapabilitiesChanged(@NonNull Network network, @NonNull NetworkCapabilities networkCapabilities) {
-            super.onCapabilitiesChanged(network, networkCapabilities);
-            checkConnectivity();
+        public void onReceive(Context context, Intent intent) {
+            processBatteryIntent(intent);
         }
     };
 
-    private synchronized void checkConnectivity() {
-        if (mConnMan == null) return;
+    private void processBatteryIntent(Intent intent) {
+        int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+        int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+        int batteryLevel = (int) (((float) level / (float) scale) * 100.0f);
+        int batteryStatus = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+        float temperature = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) / 10.0f;
+        float voltage = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1) / 1000f;
 
-        boolean newHasWifi = false;
-        boolean newHasMobile = false;
+        if (oldBatteryStatus != batteryStatus || oldBatteryLevel != batteryLevel || Math.abs(oldBatteryTemperature - temperature) > TEMP_THRESHOLD) {
+            String chargingState = getBatteryChargingState(batteryStatus).toLowerCase(Locale.ROOT);
+            String iconCategory = chargingState.contains("charging") && (chargingState.startsWith("not") || chargingState.startsWith("dis")) ? "discharging" : "charging";
+            int batteryLevel10 = (batteryLevel / 10) * 10;
+            String iconName = "mdi:battery-" + iconCategory + "-" + batteryLevel10;
 
-        Network activeNetwork = mConnMan.getActiveNetwork();
-        if (activeNetwork != null) {
-            NetworkCapabilities caps = mConnMan.getNetworkCapabilities(activeNetwork);
-            if (caps != null) {
-                newHasWifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI);
-                newHasMobile = caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR);
+            publishBatteryStatus(batteryLevel, voltage, temperature, chargingState, iconName);
+
+            if (batteryListener != null) {
+                batteryListener.onBatteryChanged(batteryLevel, batteryStatus, temperature, voltage, iconName);
             }
-        }
 
-        boolean hasChanged = (newHasWifi != hasWifi) || (newHasMobile != hasMobile);
-        hasWifi = newHasWifi;
-        hasMobile = newHasMobile;
-
-        boolean hasConnectivity = hasMobile || hasWifi;
-        Log.v(TAG, "hasConn: " + hasConnectivity + " hasChange: " + hasChanged + " - " + (mqttClient == null || !mqttClient.isConnected()));
-        
-        if (hasConnectivity && (mqttClient == null || !mqttClient.isConnected())) {
-            doConnect();
+            oldBatteryStatus = batteryStatus;
+            oldBatteryLevel = batteryLevel;
+            oldBatteryTemperature = temperature;
         }
     }
 
+    private void publishBatteryStatus(int level, float voltage, float temp, String state, String icon) {
+        try {
+            SharedPreferences prefs = getSharedPreferences("AppPreferences", MODE_PRIVATE);
+            String phoneId = prefs.getString("phone_id", "android_redmi_note_9_pro_battery");
+            
+            String json = String.format(Locale.US, "{\"state\":%d,\"voltage\":\"%.4f V\",\"temperature\":%s,\"charging_state\":\"%s\",\"power\":\"USB\",\"device_class\":\"battery\",\"unit_of_measurement\":\"%%\",\"health\":\"good\",\"technology\":\"Li-poly\",\"icon\":\"%s\"}",
+                    level, voltage, Float.toString(temp).replace(",", "."), state, icon);
+            
+            publish("homeassistant/sensor/" + phoneId + "/attributes", new MqttMessage(json.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            Log.e(TAG, "Publish failed", e);
+        }
+    }
+
+    private String getBatteryChargingState(int status) {
+        switch (status) {
+            case BatteryManager.BATTERY_STATUS_CHARGING: return "charging";
+            case BatteryManager.BATTERY_STATUS_FULL: return "charging full";
+            case BatteryManager.BATTERY_STATUS_DISCHARGING: return "discharging";
+            case BatteryManager.BATTERY_STATUS_NOT_CHARGING: return "not charging";
+            default: return "unknown";
+        }
+    }
 
     public class LocalBinder extends Binder {
         private ImageView connectionStatusImageView;
@@ -149,48 +158,26 @@ public class MqttService extends Service {
         public MqttService getService(ImageView connectionStatusImageView, TextView lastMqttMessageTextView) {
             this.connectionStatusImageView = connectionStatusImageView;
             this.lastMqttMessageTextView = lastMqttMessageTextView;
-
-            // Sync UI state immediately when binding (e.g. after screen rotation)
             updateConnectionUI();
             updateLastMessageUI(lastMqttMessageTextView);
-
             return MqttService.this;
         }
 
-        public ImageView getConnectionStatusImageView() {
-            return connectionStatusImageView;
-        }
-
-        public TextView getLastMqttMessageTextView() {
-            return lastMqttMessageTextView;
-        }
+        public ImageView getConnectionStatusImageView() { return connectionStatusImageView; }
+        public TextView getLastMqttMessageTextView() { return lastMqttMessageTextView; }
     }
 
     @Override
-    public IBinder onBind(Intent intent) {
-        return mBinder;
-    }
+    public IBinder onBind(Intent intent) { return mBinder; }
 
     public void publish(String topic, MqttMessage message) {
-        if (!hasWifi) {
-            Log.i(TAG, "Publish status only on WiFi. Skipped.");
-            return;
-        }
-
-        try {
-            lastMqttMessage = message.toString();
-            IMqttAsyncClient client = mqttClient;
-            if (client != null && client.isConnected()) {
-                client.publish(topic, message);
-            } else {
-                Log.w(TAG, "Client not connected, attempting to reconnect...");
-                doConnect();
-            }
-        } catch (MqttException e) {
-            Log.e(TAG, "Error publishing message", e);
+        lastMqttMessage = new String(message.getPayload());
+        if (mqttClient != null && mqttClient.isConnected()) {
+            try { mqttClient.publish(topic, message); } catch (MqttException e) { Log.e(TAG, "Publish error", e); }
+        } else {
+            doConnect();
         }
     }
-
 
     @SuppressLint("WakelockTimeout")
     @Override
@@ -203,100 +190,65 @@ public class MqttService extends Service {
             mConnMan.registerDefaultNetworkCallback(networkCallback);
         }
 
-        // Keep CPU running even if screen is off
-        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BatteryStatus::MqttWakeLock");
-        wakeLock.acquire();
-
-        String CHANNEL_ID = "my_channel_01";
-        if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
-                    "Battery Status Service",
-                    NotificationManager.IMPORTANCE_LOW);
-
-            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (notificationManager != null) {
-                notificationManager.createNotificationChannel(channel);
-            }
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null) {
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BatteryStatus::MqttWakeLock");
+            wakeLock.acquire();
         }
 
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+        setupNotificationChannel();
+        startForeground(1, createNotification(), Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ? 
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC : 0);
+
+        registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+    }
+
+    private void setupNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationChannel channel = new NotificationChannel("my_channel_01",
+                    "Battery Status Service", NotificationManager.IMPORTANCE_LOW);
+            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) manager.createNotificationChannel(channel);
+        }
+    }
+
+    private Notification createNotification() {
+        return new NotificationCompat.Builder(this, "my_channel_01")
                 .setContentTitle("Battery Status")
-                .setContentText("Running in background to monitor battery")
+                .setContentText("Monitoring battery and MQTT")
                 .setSmallIcon(R.drawable.ic_launcher)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build();
-
-        startForeground(1, notification);
-    }
-
-    @Override
-    public void onConfigurationChanged(Configuration newConfig) {
-        Log.d(TAG, "onConfigurationChanged()");
-        super.onConfigurationChanged(newConfig);
     }
 
     @Override
     public void onDestroy() {
-        Log.d("Service", "onDestroy");
-        if (mConnMan != null) {
-            mConnMan.unregisterNetworkCallback(networkCallback);
-        }
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
-        }
-        if (mqttClient != null) {
-            try {
-                mqttClient.disconnect();
-            } catch (MqttException ignored) {}
-        }
+        try { unregisterReceiver(batteryReceiver); } catch (Exception ignored) {}
+        if (mConnMan != null) mConnMan.unregisterNetworkCallback(networkCallback);
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        if (mqttClient != null) { try { mqttClient.disconnect(); } catch (MqttException ignored) {} }
         super.onDestroy();
     }
-
 
     private void setClientID() {
         @SuppressLint("HardwareIds")
         String id = android.provider.Settings.Secure.getString(getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
-        uniqueID = id;
-        Log.d(TAG, "uniqueID=" + uniqueID);
+        uniqueID = (id != null) ? id : "android_" + System.currentTimeMillis();
     }
 
-
     private synchronized void doConnect() {
-        if (mqttClient != null && mqttClient.isConnected()) {
-            return;
-        }
-
+        if (mqttClient != null && mqttClient.isConnected()) return;
         String broker = "tcp://" + IP + ":" + PORT;
-        Log.d(TAG, "mqtt_doConnect(" + broker + ")");
         MqttConnectOptions options = new MqttConnectOptions();
-        options.setCleanSession(true);
-        options.setMaxInflight(100);
         options.setAutomaticReconnect(true);
-        options.setConnectionTimeout(30);
-        options.setKeepAliveInterval(60);
+        options.setCleanSession(true);
 
         try {
-            if (mqttClient == null) {
-                mqttClient = new MqttAsyncClient(broker, uniqueID, new MemoryPersistence());
-            }
-
+            if (mqttClient == null) mqttClient = new MqttAsyncClient(broker, uniqueID, new MemoryPersistence());
             mqttClient.setCallback(new MqttCallback() {
-                @Override
-                public void connectionLost(Throwable throwable) {
-                    Log.d(TAG, "Connection lost (in callback)");
-                    mHandler.post(new ToastRunnable("CONNECTION LOST!", 4000));
-                    updateConnectionUI();
-                    
-                    // The automaticReconnect option should handle this, but we can also trigger a check
-                    mHandler.postDelayed(() -> checkConnectivity(), 5000);
-                }
-
-                @Override
-                public void messageArrived(String topic, MqttMessage msg) {
-                    Log.i(TAG, "Message arrived from topic " + topic);
-                    String payload = new String(msg.getPayload());
-                    if ("off".equalsIgnoreCase(payload)) {
+                @Override public void connectionLost(Throwable t) { updateConnectionUI(); }
+                @Override public void messageArrived(String t, MqttMessage m) {
+                    if ("off".equalsIgnoreCase(new String(m.getPayload()))) {
                         mHandler.post(() -> {
                             Intent intent = new Intent(MqttService.this, MainActivity.class);
                             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -305,114 +257,65 @@ public class MqttService extends Service {
                         });
                     }
                 }
-
-                @Override
-                public void deliveryComplete(IMqttDeliveryToken iMqttDeliveryToken) {
-                    Log.d(TAG, "Message published");
-
-                    Date now = new Date();
-                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-                    lastMqttTimestamp = sdf.format(now);
-
+                @Override public void deliveryComplete(IMqttDeliveryToken t) {
+                    lastMqttTimestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
                     updateLastMessageUI(((LocalBinder) mBinder).getLastMqttMessageTextView());
                 }
             });
-
             mqttClient.connect(options, null, new IMqttActionListener() {
-                @Override
-                public void onSuccess(IMqttToken asyncActionToken) {
-                    onConnectedSuccess();
-                }
-
-                @Override
-                public void onFailure(IMqttToken asyncActionToken, Throwable exception) {
-                    Log.e(TAG, "Connect failed", exception);
+                @Override public void onSuccess(IMqttToken t) {
                     updateConnectionUI();
+                    subscribeToExitTopic();
+                    forceRefresh();
                 }
+                @Override public void onFailure(IMqttToken t, Throwable e) { updateConnectionUI(); }
             });
-
-        } catch (MqttException e) {
-            Log.e(TAG, "MqttException: " + e.getMessage(), e);
-            updateConnectionUI();
-        }
-    }
-
-    private void onConnectedSuccess() {
-        Log.i(TAG, "WE ARE ONLINE!");
-        mHandler.post(new ToastRunnable("WE ARE ONLINE!", 4000));
-
-        updateConnectionUI();
-        
-        mHandler.post(() -> {
-            if (onConnectedListener != null) {
-                onConnectedListener.onConnected();
-            }
-        });
-
-        subscribeToExitTopic();
+        } catch (MqttException e) { Log.e(TAG, "Connect error", e); }
     }
 
     private void subscribeToExitTopic() {
         SharedPreferences sharedPref = getSharedPreferences("AppPreferences", MODE_PRIVATE);
-        boolean mqttExitEnabled = sharedPref.getBoolean("mqtt_exit_enabled", false);
         String exitTopic = sharedPref.getString("exit_mqtt_topic", "");
-
-        if (mqttExitEnabled && !exitTopic.isEmpty() && mqttClient != null && mqttClient.isConnected()) {
-            try {
-                mqttClient.subscribe(exitTopic, 0);
-                Log.d(TAG, "Subscribed to exit topic: " + exitTopic);
-            } catch (MqttException e) {
-                Log.e(TAG, "Error subscribing to exit topic", e);
-            }
+        if (sharedPref.getBoolean("mqtt_exit_enabled", false) && !exitTopic.isEmpty() && isConnected()) {
+            try { mqttClient.subscribe(exitTopic, 0); } catch (MqttException ignored) {}
         }
     }
 
-    public void refreshSubscriptions() {
-        if (mqttClient != null && mqttClient.isConnected()) {
-            subscribeToExitTopic();
-        }
-    }
+    public void refreshSubscriptions() { subscribeToExitTopic(); }
 
     private void updateLastMessageUI(TextView tv) {
         if (tv != null && lastMqttMessage != null && lastMqttTimestamp != null) {
-            String displayedMessage = lastMqttMessage;
-            try {
-                JSONObject jsonObject = new JSONObject(lastMqttMessage);
-                displayedMessage = jsonObject.toString(2);
-            } catch (JSONException ignored) {
-            }
-
-            final String finalMessage = displayedMessage.replace("\n", "<br>").replace(" ", "&nbsp;");
-            tv.post(() -> tv.setText(
-                    Html.fromHtml(String.format("Last MQTT message:<br><font color='#EEFF00'><small>%1$s</small></font><br>at <font color='#2FFF00'>%2$s</font>",
-                            finalMessage, lastMqttTimestamp),
-                            Html.FROM_HTML_MODE_COMPACT)
-            ));
+            String msg = lastMqttMessage;
+            try { msg = new JSONObject(lastMqttMessage).toString(2); } catch (Exception ignored) {}
+            final String finalMsg = msg.replace("\n", "<br>").replace(" ", "&nbsp;");
+            tv.post(() -> tv.setText(Html.fromHtml(String.format("Last MQTT message:<br><font color='#EEFF00'><small>%s</small></font><br>at <font color='#2FFF00'>%s</font>",
+                    finalMsg, lastMqttTimestamp), Html.FROM_HTML_MODE_COMPACT)));
         }
     }
 
     public void updateConnectionUI() {
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            performUpdateConnectionUI();
-        } else {
-            mHandler.post(this::performUpdateConnectionUI);
-        }
+        mHandler.post(() -> {
+            ImageView iv = ((LocalBinder) mBinder).getConnectionStatusImageView();
+            if (iv != null) iv.setImageResource(isConnected() ? R.drawable.ic_baseline_wifi_24 : R.drawable.ic_baseline_wifi_off_24);
+        });
     }
 
-    private void performUpdateConnectionUI() {
-        ImageView iv = ((LocalBinder) mBinder).getConnectionStatusImageView();
-        if (iv != null) {
-            if (isConnected()) {
-                iv.setImageResource(R.drawable.ic_baseline_wifi_24);
-            } else {
-                iv.setImageResource(R.drawable.ic_baseline_wifi_off_24);
-            }
-        }
+    private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
+        @Override public void onAvailable(@NonNull Network n) { checkConnectivity(); }
+        @Override public void onLost(@NonNull Network n) { checkConnectivity(); }
+    };
+
+    private void checkConnectivity() {
+        if (mConnMan == null) return;
+        Network active = mConnMan.getActiveNetwork();
+        NetworkCapabilities caps = mConnMan.getNetworkCapabilities(active);
+        hasWifi = caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI);
+        hasMobile = caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR);
+        if ((hasWifi || hasMobile) && !isConnected()) doConnect();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.v(TAG, "onStartCommand()");
         checkConnectivity();
         return START_STICKY;
     }

@@ -29,15 +29,24 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
+        <ImageView
+            android:id="@+id/connectionStatusImageView"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:layout_marginEnd="8dp"
+            app:srcCompat="@drawable/ic_baseline_wifi_off_24" />
+
         <TextView
             android:id="@+id/textViewBatteryStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_alignParentStart="true"
-            android:layout_centerVertical="true"
+            android:layout_toEndOf="@id/connectionStatusImageView"
             android:layout_toStartOf="@+id/sendNowButton"
+            android:layout_centerVertical="true"
             android:text="Battery info:"
-            android:textSize="20sp" />
+            android:textSize="18sp" />
 
         <ImageButton
             android:id="@+id/sendNowButton"
@@ -52,36 +61,35 @@
             android:tint="@color/teal_200" />
     </RelativeLayout>
 
-    <!-- Last MQTT message section (usually 5 lines) -->
+    <!-- Large Battery state icon in the center -->
+    <ImageView
+        android:id="@+id/batteryIconImageView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_margin="32dp"
+        android:scaleType="fitCenter"
+        app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintTop_toBottomOf="@id/batteryHeader"
+        app:layout_constraintBottom_toTopOf="@id/lastMqttMessage"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:srcCompat="@android:drawable/ic_lock_idle_low_battery" />
 
-    <!-- Connection icon centered in the remaining middle space -->
+    <!-- Last MQTT message section -->
     <TextView
         android:id="@+id/lastMqttMessage"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="24dp"
-        android:layout_marginBottom="20dp"
+        android:layout_marginBottom="24dp"
         android:gravity="start"
         android:minLines="5"
         android:text="Last message:"
-        android:textSize="16sp"
+        android:textSize="14sp"
         android:typeface="monospace"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
-
-    <ImageView
-        android:id="@+id/connectionStatusImageView"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:scaleType="center"
-        android:scaleX="5"
-        android:scaleY="5"
-        app:srcCompat="@drawable/ic_baseline_wifi_off_24"
-        app:layout_constraintTop_toBottomOf="@id/batteryHeader"
-        app:layout_constraintBottom_toTopOf="@id/lastMqttMessage"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
 
     <TextView
         android:id="@+id/versionTextView"

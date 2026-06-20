@@ -24,6 +24,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 <!--    <uses-permission android:name="android.permission.READ_PHONE_STATE" />-->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!--        android:theme="@style/Theme.AppCompat.DayNight"-->
     <application
@@ -46,7 +47,9 @@
 <!--            android:enabled="true"-->
 <!--            android:name=".MqttService"-->
 <!--            />-->
-        <service android:name=".MqttService" />
+        <service
+            android:name=".MqttService"
+            android:foregroundServiceType="dataSync" />
     </application>
 
 </manifest>
