@@ -43,7 +43,7 @@
             android:layout_toEndOf="@id/connectionStatusImageView"
             android:layout_toStartOf="@+id/sendNowButton"
             android:layout_centerVertical="true"
-            android:text="Battery info:"
+            android:text="Battery:"
             android:textSize="18sp" />
 
         <ImageButton
@@ -65,7 +65,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        app:layout_constraintGuide_percent="0.6" />
+        app:layout_constraintGuide_percent="0.56" />
 
     <!-- Left side bottom: JSON Status -->
     <TextView
@@ -87,7 +87,9 @@
         android:id="@+id/batteryIconImageView"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:scaleType="centerInside"
+        android:layout_margin="8dp"
+        android:scaleType="fitCenter"
+        app:layout_constraintDimensionRatio="1:1"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toEndOf="@id/guideline"

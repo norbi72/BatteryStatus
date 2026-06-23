@@ -31,6 +31,8 @@ import android.widget.ToggleButton;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Locale;
+
 public class MainActivity extends AppCompatActivity {
 
     private TextView batteryStatusTextView;
@@ -83,12 +85,10 @@ public class MainActivity extends AppCompatActivity {
                 updateBatteryIconFromLastMessage();
                 
                 // Set listener to handle future battery updates
-                mqttService.setOnBatteryChangedListener((level, status, temperature, voltage, iconName) -> {
-                    runOnUiThread(() -> {
-                        updateBatteryUI(level, status, temperature);
-                        updateBatteryIcon(iconName);
-                    });
-                });
+                mqttService.setOnBatteryChangedListener((level, status, temperature, voltage, iconName) -> runOnUiThread(() -> {
+                    updateBatteryUI(level, status, temperature);
+                    updateBatteryIcon(iconName);
+                }));
             }
 
             @Override
@@ -117,7 +117,7 @@ public class MainActivity extends AppCompatActivity {
         TextView versionTextView = findViewById(R.id.versionTextView);
         try {
             PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
-            versionTextView.setText(String.format("Version: %s (%d)", pInfo.versionName, pInfo.versionCode));
+            versionTextView.setText(String.format(Locale.getDefault(), "Version: %s (%d)", pInfo.versionName, pInfo.versionCode));
         } catch (PackageManager.NameNotFoundException ignored) {}
 
         batteryStatusTextView = findViewById(R.id.textViewBatteryStatus);
@@ -128,7 +128,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void updateBatteryUI(int level, int status, float temperature) {
         String chargingState = getBatteryChargingState(status);
-        String info = String.format("Battery Info: %s at %d%%  %.1f°C", chargingState, level, temperature);
+        String info = String.format(Locale.getDefault(), "Battery: %s at %d%%  %.1f°C", chargingState, level, temperature);
         batteryStatusTextView.setText(info);
     }
 
