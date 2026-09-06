@@ -1,6 +1,7 @@
 package hu.norbi.batterystatus;
 
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -14,9 +15,10 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.provider.Settings;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.app.AppCompatDelegate;
-import android.support.v7.widget.Toolbar;
+import androidx.core.content.ContextCompat;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.appcompat.widget.Toolbar;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -44,14 +46,20 @@ public class MainActivity extends AppCompatActivity {
     private MqttService mqttService;
     private ServiceConnection myServiceConnection;
 
+    private final BroadcastReceiver exitReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (MqttService.ACTION_FORCE_EXIT.equals(intent.getAction())) {
+                finishAndRemoveTask();
+            }
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        if (getIntent().getBooleanExtra("ACTION_EXIT", false)) {
-            forceStopAndQuit();
-            return;
-        }
+        ContextCompat.registerReceiver(this, exitReceiver, new android.content.IntentFilter(MqttService.ACTION_FORCE_EXIT), ContextCompat.RECEIVER_NOT_EXPORTED);
 
         initializeUI();
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
@@ -158,6 +166,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        try { unregisterReceiver(exitReceiver); } catch (Exception ignored) {}
         if (mBounded) {
             getApplicationContext().unbindService(myServiceConnection);
             mBounded = false;

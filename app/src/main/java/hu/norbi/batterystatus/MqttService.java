@@ -21,8 +21,8 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
-import android.support.annotation.NonNull;
-import android.support.v4.app.NotificationCompat;
+import androidx.annotation.NonNull;
+import androidx.core.app.NotificationCompat;
 import android.text.Html;
 import android.util.Log;
 import android.widget.ImageView;
@@ -50,6 +50,7 @@ public class MqttService extends Service {
     private static final String IP = "192.168.31.111";
     private static final String PORT = "1883";
     private static final double TEMP_THRESHOLD = 0.5;
+    public static final String ACTION_FORCE_EXIT = "hu.norbi.batterystatus.FORCE_EXIT";
 
     private final IBinder mBinder = new LocalBinder();
     private Handler mHandler;
@@ -197,8 +198,11 @@ public class MqttService extends Service {
         }
 
         setupNotificationChannel();
-        startForeground(1, createNotification(), Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ? 
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC : 0);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(1, createNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(1, createNotification());
+        }
 
         registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
     }
@@ -250,10 +254,14 @@ public class MqttService extends Service {
                 @Override public void messageArrived(String t, MqttMessage m) {
                     if ("off".equalsIgnoreCase(new String(m.getPayload()))) {
                         mHandler.post(() -> {
-                            Intent intent = new Intent(MqttService.this, MainActivity.class);
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                            intent.putExtra("ACTION_EXIT", true);
-                            startActivity(intent);
+                            Intent exitIntent = new Intent(ACTION_FORCE_EXIT);
+                            exitIntent.setPackage(getPackageName());
+                            sendBroadcast(exitIntent);
+                            
+                            mHandler.postDelayed(() -> {
+                                stopSelf();
+                                System.exit(0);
+                            }, 500);
                         });
                     }
                 }
